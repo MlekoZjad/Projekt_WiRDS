@@ -1,0 +1,441 @@
+---
+title: "Projekt_wizualizacja"
+format: html
+editor: visual
+---
+
+### Dane
+
+Dane do projektu zostały pobrane ze strony [Gapminder.org](%22https://www.gapminder.org/data/%22). Zawierają one informacje o oczekiwanej długości życia, PKB per capita, ogólna populacja, oczekiwana długość życia dla kobiet i mężczyzn oraz śmiertelnośc dzieci poniżej 5-tego roku życia na 1000 urodzeń.
+
+**Opis zmiennych**
+
+`country` - nazwa kraju
+
+`year` - rok
+
+`lex` - łączna oczekiwana długość życia
+
+`pop` - populacja
+
+`gdp_pcap` - PKB per capita
+
+`lex_female` - oczekiwana długość życia dla kobiet
+
+`lex_male` - oczekiwana długość życia dla mężczyzn
+
+`child_mort` - śmiertelnośc dzieci poniżej 5-tego roku życia na 1000 urodzeń
+
+`work_h` - średnia tygodniowa liczba przepracowanych godzin
+
+### Biblioteki
+
+```{r results='hide', warning=FALSE, message=FALSE}
+
+required.packages <- c("ggplot2", "dplyr", "tidyr", "psych", "countrycode", "stringr", "rnaturalearthdata", "rnaturalearth", "sf", "readr", "tmap", "maptools", "RColorBrewer", "sp", "classInt", "leaflet", "plotly" )
+new.packages <- required.packages[!(required.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+for(package_name in required.packages)
+    {
+        library(package_name,character.only=TRUE,quietly=TRUE);
+    }
+```
+
+### Przygotowanie danych
+
+```{r}
+lex <- read.csv("../raw_data/Projekt/lex.csv")
+pop <- read.csv("../raw_data/Projekt/pop.csv")
+gdp_pcap <- read.csv("../raw_data/Projekt/gdp_pcap.csv")
+lex_female <- read.csv("../raw_data/Projekt/life_expectancy_female.csv")
+lex_male <- read.csv("../raw_data/Projekt/life_expectancy_male.csv")
+child_mort <- read.csv("../raw_data/Projekt/child_mortality_0_5_year_olds_dying_per_1000_born.csv")
+work_h <- read.csv('../raw_data/Projekt/working_hours_per_week.csv')
+
+```
+
+```{r}
+# Przekształcenie danych
+reshape_data <- function(data, value_name) {
+  data_long <- data %>%
+    mutate(across(everything(), as.character)) %>%
+    pivot_longer(cols = -country, names_to = "year", values_to = value_name)
+  
+  # Wyciągnij rok z nazw kolumny (usuń "X") i konwertuj na char
+  data_long$year <- as.character(as.numeric(gsub("X", "", data_long$year), na.rm = TRUE))
+  
+  return(data_long)
+}
+
+# Przekształć wczytane dane
+lex_long <- reshape_data(lex, "lex")
+pop_long <- reshape_data(pop, "pop")
+gdp_pcap_long <- reshape_data(gdp_pcap, "gdpPercap")
+lex_female_long <- reshape_data(lex_female, "lex_female")
+lex_male_long <- reshape_data(lex_male, "lex_male")
+child_mort <- reshape_data(child_mort, "child_mort") 
+work_h <- reshape_data(work_h, "work_h")
+```
+
+```{r}
+# Połącz ze sobą dane
+merged_data <- lex_long %>%
+  left_join(pop_long, by = c("country", "year")) %>%
+  left_join(gdp_pcap_long, by = c("country", "year")) %>%
+  left_join(lex_female_long, by = c("country", "year")) %>%
+  left_join(lex_male_long, by = c("country", "year")) %>%
+  left_join(child_mort, by = c("country", "year")) %>%
+  left_join(work_h, by = c("country", "year"))
+
+```
+
+```{r}
+# Konwersja kolumny pop
+merged_data <- merged_data %>%
+  mutate(pop = gsub("M", "e6", pop)) %>%
+  mutate(pop = gsub("k", "e3", pop)) %>%
+  mutate(pop = as.numeric(pop))
+```
+
+```{r}
+# Wybór danych z przedziału 1950-2050
+merged_data_filtered <- merged_data %>%
+  filter(between(as.numeric(year), 1950, 2050))
+```
+
+```{r}
+# Zapis gotowych danych do pliku
+#write.csv(merged_data_filtered, "data_1950_2050.csv", row.names = FALSE)
+```
+
+```{r}
+#write.csv(europe_data, "europe_data.csv", row.names = FALSE)
+```
+
+### Ogólny przegląd danych
+
+```{r}
+# View(merged_data_filtered)   
+data = data.matrix(merged_data_filtered)
+describe(data)
+```
+
+```{r}
+# Dodaj nazwę kontynentu
+merged_data_filtered$continent <- countrycode(merged_data_filtered$country, "country.name", "continent")
+
+```
+
+```{r}
+# Zapis gotowych danych do pliku z nazwą kontynentu
+write.csv(merged_data_filtered, "data_1950_2050_continent.csv", row.names = FALSE)
+```
+
+## Wczytanie danych i ich dalsza analiza
+
+```{r}
+merged_data_filtered <- read.csv("data_1950_2050_continent.csv")
+
+```
+
+```{r}
+# Wyfiltruj dane dla Europy
+#europe_data <- subset(merged_data_filtered, continent == "Europe")
+
+# Lista wszystkich krajów w Unii Europejskiej
+all_eu_countries <- c("Austria", "Belgium", "Bulgaria", "Croatia", "Republic of Cyprus", 
+                      "Czech Republic", "Denmark", "Estonia", "Finland", "France", 
+                      "Germany", "Greece", "Hungary", "Ireland", "Italy", "Latvia", 
+                      "Lithuania", "Luxembourg", "Malta", "Netherlands", "Poland", 
+                      "Portugal", "Romania", "Slovakia", "Slovenia", "Spain", "Sweden")
+
+# Wyfiltruj dane dla wszystkich krajów z Unii Europejskiej
+eu_data <- subset(merged_data_filtered, country %in% all_eu_countries)
+
+
+```
+
+```{r}
+
+# Sprawdzanie gdzie i ile znajdują się wartości puste
+colSums(is.na(eu_data))
+
+# Wyświetlenie wartości pustych
+subset(eu_data, is.na(lex))
+
+
+```
+
+```{r}
+# Usunięcie wartości pustych
+europe_data <- na.omit(eu_data)
+```
+
+```{r}
+# Przekształcenie na liczbę zmiennej gdpPercap
+europe_data$gdpPercap <- as.numeric(str_replace_all(europe_data$gdpPercap, "[^0-9.]", ""))
+europe_data$lex <- as.numeric(europe_data$lex)
+
+# Przekształcenie kolumny pop
+#europe_data$pop <- parse_number(europe_data$pop)
+
+europe_data$child_mort <- as.numeric(europe_data$child_mort)
+```
+
+```{r}
+# Stworzenie podgrup na podstawie PKB per capita
+europe_data <- europe_data %>%
+  mutate(pkb_syt = case_when(
+    gdpPercap < quantile(gdpPercap, 0.25) ~ 'bardzo niskie',
+    gdpPercap >= quantile(gdpPercap, 0.25) & gdpPercap < quantile(gdpPercap, 0.5) ~ 'niskie',
+    gdpPercap >= quantile(gdpPercap, 0.5) & gdpPercap < quantile(gdpPercap, 0.75) ~ 'średnie',
+    gdpPercap >= quantile(gdpPercap, 0.75) ~ 'wysokie'
+  ))
+
+
+```
+
+```{r}
+# Stworzenie podgrup na podstawie średniej długości życia (lex)
+europe_data <- europe_data %>%
+  mutate(lex_syt = case_when(
+    lex < quantile(lex, 0.25) ~ 'Bardzo niska',
+    lex >= quantile(lex, 0.25) & lex < quantile(lex, 0.5) ~ 'Niska',
+    lex >= quantile(lex, 0.5) & lex < quantile(lex, 0.75) ~ 'Średnia',
+    lex >= quantile(lex, 0.75) ~ 'Wysoka'
+  ))
+```
+
+```{r}
+#europe_data$year <- as.Date(europe_data$year, format = "%Y")
+```
+
+## Wizualizacja
+
+Wykres przedstawia
+
+```{r}
+# Wyfiltruj dane tylko dla roku 2050
+filtered_data <- europe_data %>% filter(year == 2050)
+
+ggplot(europe_data, aes(x = gdpPercap, y = lex, size = pop)) +
+  geom_point() +
+  scale_size_continuous(range = c(1, 10)) +  # Dostosuj zakres rozmiarów oczek
+  labs(title = "Wykres zależności Lex, GDP per capita i populacji",
+       x = "GDP per capita",
+       y = "Oczekiwana długość życia") +
+  theme_minimal()
+```
+
+```{r}
+
+
+filtered_data <- europe_data %>% filter(year == 2050)
+
+# Tworzenie interaktywnego wykresu punktowego za pomocą ggplot i plotly
+plot <- ggplot(filtered_data, aes(x = year, y = lex, color = pkb_syt, size = child_mort, text = paste("Country: ", country, "<br>Year: ", year, "<br>Life Expectancy: ", round(lex, 2)))) +
+  geom_point() +
+  labs(title = "Oczekiwana długość życia w krajach europejskich (Rok 2050)",
+       x = "Rok",
+       y = "Oczekiwana długość życia") +
+  scale_color_manual(values = c("bardzo niskie" = "red", "niskie" = "orange", "średnie" = "blue", "wysokie" = "green")) +
+  theme_minimal()
+
+# Konwersja do wykresu interaktywnego plotly
+interactive_plot <- ggplotly(plot)
+
+interactive_plot
+
+```
+
+```{r}
+ggplot(data = europe_data, aes(x = year, y = lex, color = lex_syt)) +
+  geom_point(size = 0.5, alpha = 0.5) +
+  scale_color_brewer(palette = 'Set1') +
+  labs(x = 'Rok', y = 'Długość życia', color = 'Sytuacja materialna') +
+  guides(color = guide_legend(override.aes = list(size = 2))) +
+  coord_fixed(ratio = 1) +
+  theme_classic() +
+  theme(legend.position = 'bottom')
+
+```
+
+```{r}
+ggplot(data = europe_data, aes(x = year, y = lex, color = lex_syt)) +
+  geom_point(size = 0.5, alpha = 0.5) +
+  scale_color_brewer(palette = 'Set1') +
+  labs(x = 'Rok', y = 'Długość życia', color = 'Sytuacja materialna') +
+  guides(color = guide_legend(override.aes = list(size = 2))) +
+  coord_fixed(ratio = 1) +
+  theme_classic() +
+  theme(legend.position = 'bottom') +
+  xlim(1950, 2000)
+```
+
+```{r}
+colSums(is.na(europe_data))
+```
+
+```{r}
+
+# Pobranie danych dotyczących granic krajów europejskich
+european_countries <- ne_countries(continent = "Europe", returnclass = "sf")
+
+# Dołączenie danych do ramki danych merged_data_filtered
+merged_data_filtered_with_borders <- left_join(europe_data, european_countries, by = c("country" = "name"))
+
+# Przekształcenie ramki danych na obiekt sf
+merged_data_filtered_with_borders_sf <- st_as_sf(merged_data_filtered_with_borders)
+
+# Zwizualizowanie danych
+plot(merged_data_filtered_with_borders_sf["geometry"], col = "lightblue", border = "gray")
+
+# Dodanie kolumny z kodami ISO
+merged_data_filtered_with_borders_sf <- merged_data_filtered_with_borders_sf %>%
+  mutate(iso_a3 = st_as_text(st_geometry(merged_data_filtered_with_borders_sf)))
+
+```
+
+```{r}
+borders <- read_sf("../EU/Europe_merged.shp")
+borders <- borders %>%
+  rename(country = COUNTRY)
+```
+
+```{r}
+head(borders)
+```
+
+```{r}
+merged_data <- left_join(borders, europe_data, by = "country")
+ggplot(merged_data, aes(fill = pkb_syt)) +
+  geom_sf() +
+  labs(title = "PKB per capita w krajach europejskich",
+       fill = "PKB per capita") +
+  theme_minimal()
+```
+
+```{r}
+dir <- "../EU/"
+europe_map <- readShapeSpatial(file.path( "../EU/NUTS_RG_60M_2021_3035.shp"))
+europe_map <- europe_map[europe_map$STAT_LEVL_ == 0,]
+
+plot(europe_map, main = "European Map")
+
+library(leaflet)
+
+set.seed(123)
+europe_map$random_data <- rnorm(nrow(europe_map))
+
+leaflet() %>%
+  addPolygons(data = europe_map, fillOpacity = 0.7, fillColor = "blue", color = "white", weight = 1) %>%
+  addTiles() %>%
+  addScaleBar(position = "bottomleft") %>%
+  setView(lng = 10, lat = 50, zoom = 4) %>%
+  addLegend("bottomright", colors = "blue", labels = "Random Data") %>%
+  addPopups(
+    europe_map$random_data,
+    options = popupOptions(
+      closeButton = FALSE,
+      className = "popup"
+    )
+  )
+
+```
+
+```{r}
+
+
+# ggplot2 map
+gg_map <- ggplot(europe_data, aes(fill = lex_syt)) +
+  geom_sf(color = "white", size = 0.2) +
+  scale_fill_manual(values = c("Bardzo niska" = "red", "Niska" = "orange", "Średnia" = "yellow", "Wysoka" = "green")) +
+  labs(title = "Mapa średniej oczekiwanej długości życia w krajach europejskich",
+       fill = "Średnia oczekiwana długość życia") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank())
+
+# Convert the ggplot object to an HTML element
+
+gg_html <- htmltools::tagList(list(div(style = "font-size:14px; margin-bottom:14px;"), 
+
+                                    htmltools::img(src = "logo.png", alt = "Logo", width = 200, height = 50)))
+
+
+leaflet_map <- leaflet() %>%
+
+ addTiles() %>%
+
+ setView(lng = 10, lat = 50, zoom = 4) %>%
+
+ addLegend("bottomright", colors = c("red", "orange", "yellow", "green"), labels = c("Bardzo niska", "Niska", "Średnia", "Wysoka")) %>%
+
+ htmlwidgets::onRender(sprintf("function(el, x) { 
+
+                                 var g = document.createElement('div');
+
+                                 g.innerHTML = '%s';
+
+                                 el.appendChild(g);
+
+                               }", gg_html))
+
+
+# Display the interactive map
+
+leaflet_map
+```
+
+```{r}
+# ggplot2 map
+gg_map <- ggplot(europe_data, aes(fill = lex_syt)) +
+  geom_sf(color = "white", size = 0.2) +
+  scale_fill_manual(values = c("Bardzo niska" = "red", "Niska" = "orange", "Średnia" = "yellow", "Wysoka" = "green")) +
+  labs(title = "Mapa średniej oczekiwanej długości życia w krajach europejskich",
+       fill = "Średnia oczekiwana długość życia") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank())
+gg_map
+```
+
+```{r}
+
+library(ggplot2)
+
+ggplot(merged_data_filtered_with_borders_sf, aes(fill = lex_syt)) +
+  geom_sf(color = "white", size = 0.2) +
+  scale_fill_manual(values = c("Bardzo niska" = "red", "Niska" = "orange", "Średnia" = "yellow", "Wysoka" = "green")) +
+  labs(title = "Mapa średniej oczekiwanej długości życia w krajach europejskich",
+       fill = "Średnia oczekiwana długość życia") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank())
+
+
+```
+
+```{r}
+
+wget("http://ec.europa.eu/eurostat/cache/GISCO/geodatafiles/NUTS_2013_01M_SH.zip")
+```
+
+```{r}
+
+```
