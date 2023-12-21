@@ -32,7 +32,7 @@ Dane do projektu zostały pobrane ze strony [Gapminder.org](%22https://www.gapmi
 
 ```{r results='hide', warning=FALSE, message=FALSE}
 
-required.packages <- c("ggplot2", "dplyr", "tidyr", "psych", "countrycode", "stringr", "rnaturalearthdata", "rnaturalearth", "sf", "readr", "tmap", "maptools", "RColorBrewer", "sp", "classInt", "leaflet", "plotly" )
+required.packages <- c("ggplot2", "dplyr", "tidyr", "psych", "countrycode", "stringr", "rnaturalearthdata", "rnaturalearth", "sf", "readr", "tmap", "maptools", "RColorBrewer", "sp", "classInt", "leaflet", "plotly",'ggrepel' )
 new.packages <- required.packages[!(required.packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
 for(package_name in required.packages)
@@ -73,8 +73,8 @@ pop_long <- reshape_data(pop, "pop")
 gdp_pcap_long <- reshape_data(gdp_pcap, "gdpPercap")
 lex_female_long <- reshape_data(lex_female, "lex_female")
 lex_male_long <- reshape_data(lex_male, "lex_male")
-child_mort <- reshape_data(child_mort, "child_mort") 
-work_h <- reshape_data(work_h, "work_h")
+child_mort_long <- reshape_data(child_mort, "child_mort") 
+work_h_long <- reshape_data(work_h, "work_h")
 ```
 
 ```{r}
@@ -84,8 +84,8 @@ merged_data <- lex_long %>%
   left_join(gdp_pcap_long, by = c("country", "year")) %>%
   left_join(lex_female_long, by = c("country", "year")) %>%
   left_join(lex_male_long, by = c("country", "year")) %>%
-  left_join(child_mort, by = c("country", "year")) %>%
-  left_join(work_h, by = c("country", "year"))
+  left_join(child_mort_long, by = c("country", "year")) %>%
+  left_join(work_h_long, by = c("country", "year"))
 
 ```
 
@@ -98,6 +98,13 @@ merged_data <- merged_data %>%
 ```
 
 ```{r}
+# Konwersja kolumny 
+merged_data <- merged_data %>%
+  mutate(gdpPercap = gsub("k", "e3", gdpPercap)) %>%
+  mutate(gdpPercap = as.numeric(gdpPercap))
+```
+
+```{r}
 # Wybór danych z przedziału 1950-2050
 merged_data_filtered <- merged_data %>%
   filter(between(as.numeric(year), 1950, 2050))
@@ -106,10 +113,6 @@ merged_data_filtered <- merged_data %>%
 ```{r}
 # Zapis gotowych danych do pliku
 #write.csv(merged_data_filtered, "data_1950_2050.csv", row.names = FALSE)
-```
-
-```{r}
-#write.csv(europe_data, "europe_data.csv", row.names = FALSE)
 ```
 
 ### Ogólny przegląd danych
@@ -139,8 +142,6 @@ merged_data_filtered <- read.csv("data_1950_2050_continent.csv")
 ```
 
 ```{r}
-# Wyfiltruj dane dla Europy
-#europe_data <- subset(merged_data_filtered, continent == "Europe")
 
 # Lista wszystkich krajów w Unii Europejskiej
 all_eu_countries <- c("Austria", "Belgium", "Bulgaria", "Croatia", "Republic of Cyprus", 
@@ -196,6 +197,27 @@ europe_data <- europe_data %>%
 ```
 
 ```{r}
+#TEST
+europe_data <- europe_data %>%
+  mutate(pkb_syt = case_when(
+    gdpPercap < quantile(gdpPercap, 0.25) ~ paste('Bardzo Niskie (', quantile(gdpPercap, 0.25), ')'),
+    gdpPercap >= quantile(gdpPercap, 0.25) & gdpPercap < quantile(gdpPercap, 0.5) ~ paste('Niskie (', quantile(gdpPercap, 0.5), ')'),
+    gdpPercap >= quantile(gdpPercap, 0.5) & gdpPercap < quantile(gdpPercap, 0.75) ~ paste('Średnie (', quantile(gdpPercap, 0.75), ')'),
+    gdpPercap >= quantile(gdpPercap, 0.75) ~ paste('Wysokie (', quantile(gdpPercap, 0.75), ')')
+  ))
+
+```
+
+```{r}
+# Zmiana typu
+europe_data$year <- as.numeric(europe_data$year)
+europe_data$lex <- as.numeric(europe_data$lex)
+europe_data$lex_female <- as.numeric(europe_data$lex_female)
+europe_data$lex_male <- as.numeric(europe_data$lex_male)
+europe_data$work_h <- as.numeric(europe_data$work_h)
+```
+
+```{r}
 # Stworzenie podgrup na podstawie średniej długości życia (lex)
 europe_data <- europe_data %>%
   mutate(lex_syt = case_when(
@@ -206,75 +228,38 @@ europe_data <- europe_data %>%
   ))
 ```
 
-```{r}
-#europe_data$year <- as.Date(europe_data$year, format = "%Y")
-```
-
 ## Wizualizacja
 
-Wykres przedstawia
-
 ```{r}
-# Wyfiltruj dane tylko dla roku 2050
-filtered_data <- europe_data %>% filter(year == 2050)
+# Tworzenie kopii danych i filtrowanie
+filtered_data <- europe_data %>%
+  transmute(country, year, gdpPercap, lex, pop) %>%
+  filter(year == 2000) %>%
+  distinct(country, .keep_all = TRUE)
 
-ggplot(europe_data, aes(x = gdpPercap, y = lex, size = pop)) +
-  geom_point() +
-  scale_size_continuous(range = c(1, 10)) +  # Dostosuj zakres rozmiarów oczek
-  labs(title = "Wykres zależności Lex, GDP per capita i populacji",
+# Utworzenie innej palety kolorów dla punktów
+point_colors <- scales::brewer_pal(palette = "Paired")(length(unique(filtered_data$country)))
+
+ggplot(filtered_data, aes(x = gdpPercap, y = lex, size = pop, label = country, color = country)) +
+  geom_point(alpha = 0.7) + # Dodanie przejrzystości punktów
+  scale_size_continuous(range = c(1, 10)) +
+  labs(title = "Wykres zależności długości życia, PKB per capita i wielkości populacji w 2000 roku",
        x = "GDP per capita",
        y = "Oczekiwana długość życia") +
-  theme_minimal()
+  theme_minimal() +
+  scale_y_continuous(limits = c(70, 80), breaks = c(70, 75, 80)) +
+  scale_x_continuous(limits = c(min(filtered_data$gdpPercap), max(filtered_data$gdpPercap))) +
+  geom_text_repel(
+    box.padding = 0.2,  # Dystans pomiędzy etykietami a punktami
+    segment.color = "grey",  # Kolor linii łączących etykiety z punktami
+    segment.size = 0.2,  # Grubość linii łączących etykiety z punktami
+    segment.alpha = 0.2  # Przejrzystość linii łączących etykiety z punktami
+  ) +
+  scale_color_manual(values = point_colors) +  # Ustawienie kolorów punktów
+  theme(legend.position = "none")
 ```
 
-```{r}
-
-
-filtered_data <- europe_data %>% filter(year == 2050)
-
-# Tworzenie interaktywnego wykresu punktowego za pomocą ggplot i plotly
-plot <- ggplot(filtered_data, aes(x = year, y = lex, color = pkb_syt, size = child_mort, text = paste("Country: ", country, "<br>Year: ", year, "<br>Life Expectancy: ", round(lex, 2)))) +
-  geom_point() +
-  labs(title = "Oczekiwana długość życia w krajach europejskich (Rok 2050)",
-       x = "Rok",
-       y = "Oczekiwana długość życia") +
-  scale_color_manual(values = c("bardzo niskie" = "red", "niskie" = "orange", "średnie" = "blue", "wysokie" = "green")) +
-  theme_minimal()
-
-# Konwersja do wykresu interaktywnego plotly
-interactive_plot <- ggplotly(plot)
-
-interactive_plot
-
-```
-
-```{r}
-ggplot(data = europe_data, aes(x = year, y = lex, color = lex_syt)) +
-  geom_point(size = 0.5, alpha = 0.5) +
-  scale_color_brewer(palette = 'Set1') +
-  labs(x = 'Rok', y = 'Długość życia', color = 'Sytuacja materialna') +
-  guides(color = guide_legend(override.aes = list(size = 2))) +
-  coord_fixed(ratio = 1) +
-  theme_classic() +
-  theme(legend.position = 'bottom')
-
-```
-
-```{r}
-ggplot(data = europe_data, aes(x = year, y = lex, color = lex_syt)) +
-  geom_point(size = 0.5, alpha = 0.5) +
-  scale_color_brewer(palette = 'Set1') +
-  labs(x = 'Rok', y = 'Długość życia', color = 'Sytuacja materialna') +
-  guides(color = guide_legend(override.aes = list(size = 2))) +
-  coord_fixed(ratio = 1) +
-  theme_classic() +
-  theme(legend.position = 'bottom') +
-  xlim(1950, 2000)
-```
-
-```{r}
-colSums(is.na(europe_data))
-```
+## TESTY Z SHP
 
 ```{r}
 
@@ -433,7 +418,7 @@ ggplot(merged_data_filtered_with_borders_sf, aes(fill = lex_syt)) +
 
 ```{r}
 
-wget("http://ec.europa.eu/eurostat/cache/GISCO/geodatafiles/NUTS_2013_01M_SH.zip")
+
 ```
 
 ```{r}
