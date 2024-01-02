@@ -259,24 +259,7 @@ ggplot(filtered_data, aes(x = gdpPercap, y = lex, size = pop, label = country, c
   theme(legend.position = "none")
 ```
 
-## TESTY Z SHP
+## 
 
-```{r}
-
-# Pobranie danych dotyczących granic krajów europejskich
-european_countries <- ne_countries(continent = "Europe", returnclass = "sf")
-
-# Dołączenie danych do ramki danych merged_data_filtered
-merged_data_filtered_with_borders <- left_join(europe_data, european_countries, by = c("country" = "name"))
-
-# Przekształcenie ramki danych na obiekt sf
-merged_data_filtered_with_borders_sf <- st_as_sf(merged_data_filtered_with_borders)
-
-# Zwizualizowanie danych
-plot(merged_data_filtered_with_borders_sf["geometry"], col = "lightblue", border = "gray")
-
-# Dodanie kolumny z kodami ISO
-merged_data_filtered_with_borders_sf <- merged_data_filtered_with_borders_sf %>%
-  mutate(iso_a3 = st_as_text(st_geometry(merged_data_filtered_with_borders_sf)))
-
+```{}
 ```
