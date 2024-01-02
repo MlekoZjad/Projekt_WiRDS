@@ -162,7 +162,7 @@ eu_data <- subset(merged_data_filtered, country %in% all_eu_countries)
 colSums(is.na(eu_data))
 
 # Wyświetlenie wartości pustych
-subset(eu_data, is.na(lex))
+subset(eu_data, is.na(work_h))
 
 
 ```
@@ -197,7 +197,7 @@ europe_data <- europe_data %>%
 ```
 
 ```{r}
-#TEST
+#TEST - pokazuje kwartyle
 europe_data <- europe_data %>%
   mutate(pkb_syt = case_when(
     gdpPercap < quantile(gdpPercap, 0.25) ~ paste('Bardzo Niskie (', quantile(gdpPercap, 0.25), ')'),
@@ -278,149 +278,5 @@ plot(merged_data_filtered_with_borders_sf["geometry"], col = "lightblue", border
 # Dodanie kolumny z kodami ISO
 merged_data_filtered_with_borders_sf <- merged_data_filtered_with_borders_sf %>%
   mutate(iso_a3 = st_as_text(st_geometry(merged_data_filtered_with_borders_sf)))
-
-```
-
-```{r}
-borders <- read_sf("../EU/Europe_merged.shp")
-borders <- borders %>%
-  rename(country = COUNTRY)
-```
-
-```{r}
-head(borders)
-```
-
-```{r}
-merged_data <- left_join(borders, europe_data, by = "country")
-ggplot(merged_data, aes(fill = pkb_syt)) +
-  geom_sf() +
-  labs(title = "PKB per capita w krajach europejskich",
-       fill = "PKB per capita") +
-  theme_minimal()
-```
-
-```{r}
-dir <- "../EU/"
-europe_map <- readShapeSpatial(file.path( "../EU/NUTS_RG_60M_2021_3035.shp"))
-europe_map <- europe_map[europe_map$STAT_LEVL_ == 0,]
-
-plot(europe_map, main = "European Map")
-
-library(leaflet)
-
-set.seed(123)
-europe_map$random_data <- rnorm(nrow(europe_map))
-
-leaflet() %>%
-  addPolygons(data = europe_map, fillOpacity = 0.7, fillColor = "blue", color = "white", weight = 1) %>%
-  addTiles() %>%
-  addScaleBar(position = "bottomleft") %>%
-  setView(lng = 10, lat = 50, zoom = 4) %>%
-  addLegend("bottomright", colors = "blue", labels = "Random Data") %>%
-  addPopups(
-    europe_map$random_data,
-    options = popupOptions(
-      closeButton = FALSE,
-      className = "popup"
-    )
-  )
-
-```
-
-```{r}
-
-
-# ggplot2 map
-gg_map <- ggplot(europe_data, aes(fill = lex_syt)) +
-  geom_sf(color = "white", size = 0.2) +
-  scale_fill_manual(values = c("Bardzo niska" = "red", "Niska" = "orange", "Średnia" = "yellow", "Wysoka" = "green")) +
-  labs(title = "Mapa średniej oczekiwanej długości życia w krajach europejskich",
-       fill = "Średnia oczekiwana długość życia") +
-  theme_minimal() +
-  theme(legend.position = "bottom",
-        panel.border = element_blank(),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.text = element_blank(),
-        axis.title = element_blank(),
-        axis.ticks = element_blank())
-
-# Convert the ggplot object to an HTML element
-
-gg_html <- htmltools::tagList(list(div(style = "font-size:14px; margin-bottom:14px;"), 
-
-                                    htmltools::img(src = "logo.png", alt = "Logo", width = 200, height = 50)))
-
-
-leaflet_map <- leaflet() %>%
-
- addTiles() %>%
-
- setView(lng = 10, lat = 50, zoom = 4) %>%
-
- addLegend("bottomright", colors = c("red", "orange", "yellow", "green"), labels = c("Bardzo niska", "Niska", "Średnia", "Wysoka")) %>%
-
- htmlwidgets::onRender(sprintf("function(el, x) { 
-
-                                 var g = document.createElement('div');
-
-                                 g.innerHTML = '%s';
-
-                                 el.appendChild(g);
-
-                               }", gg_html))
-
-
-# Display the interactive map
-
-leaflet_map
-```
-
-```{r}
-# ggplot2 map
-gg_map <- ggplot(europe_data, aes(fill = lex_syt)) +
-  geom_sf(color = "white", size = 0.2) +
-  scale_fill_manual(values = c("Bardzo niska" = "red", "Niska" = "orange", "Średnia" = "yellow", "Wysoka" = "green")) +
-  labs(title = "Mapa średniej oczekiwanej długości życia w krajach europejskich",
-       fill = "Średnia oczekiwana długość życia") +
-  theme_minimal() +
-  theme(legend.position = "bottom",
-        panel.border = element_blank(),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.text = element_blank(),
-        axis.title = element_blank(),
-        axis.ticks = element_blank())
-gg_map
-```
-
-```{r}
-
-library(ggplot2)
-
-ggplot(merged_data_filtered_with_borders_sf, aes(fill = lex_syt)) +
-  geom_sf(color = "white", size = 0.2) +
-  scale_fill_manual(values = c("Bardzo niska" = "red", "Niska" = "orange", "Średnia" = "yellow", "Wysoka" = "green")) +
-  labs(title = "Mapa średniej oczekiwanej długości życia w krajach europejskich",
-       fill = "Średnia oczekiwana długość życia") +
-  theme_minimal() +
-  theme(legend.position = "bottom",
-        panel.border = element_blank(),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.text = element_blank(),
-        axis.title = element_blank(),
-        axis.ticks = element_blank())
-
-
-```
-
-```{r}
-
-
-```
-
-```{r}
 
 ```
