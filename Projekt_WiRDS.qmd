@@ -6,7 +6,7 @@ editor: visual
 
 ### Dane
 
-Dane do projektu zostały pobrane ze strony [Gapminder.org](%22https://www.gapminder.org/data/%22). Zawierają one informacje o oczekiwanej długości życia, PKB per capita, ogólna populacja, oczekiwana długość życia dla kobiet i mężczyzn oraz śmiertelnośc dzieci poniżej 5-tego roku życia na 1000 urodzeń.
+Dane do projektu zostały pobrane ze strony [Gapminder.org](%22https://www.gapminder.org/data/%22). Zawierają one informacje o oczekiwanej długości życia, PKB per capita, ogólna populacja, oczekiwana długość życia dla kobiet i mężczyzn, śmiertelnośc dzieci poniżej 5-tego roku życia na 1000 urodzeń oraz średnią liczbę przepracowanych godzin w tygodniu.
 
 **Opis zmiennych**
 
@@ -32,19 +32,24 @@ Dane do projektu zostały pobrane ze strony [Gapminder.org](%22https://www.gapmi
 
 ```{r results='hide', warning=FALSE, message=FALSE}
 
-required.packages <- c("ggplot2", "dplyr", "tidyr", "psych", "countrycode", "stringr", "rnaturalearthdata", "rnaturalearth", "sf", "readr", "tmap", "maptools", "RColorBrewer", "sp", "classInt", "leaflet", "plotly",'ggrepel' )
+required.packages <- c("ggplot2", "dplyr", "tidyr", "psych", "countrycode", "stringr", "rnaturalearthdata", "rnaturalearth", "sf", "readr", "tmap", "tmaptools", "RColorBrewer", "sp", "classInt", "leaflet", "plotly",'ggrepel', "reactable" )
 new.packages <- required.packages[!(required.packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
 for(package_name in required.packages)
     {
         library(package_name,character.only=TRUE,quietly=TRUE);
-    }
+}
+
+library(reactablefmtr)
+library(stringr)
+library(janitor)
+library(scales)
 ```
 
 ### Przygotowanie danych
 
 ```{r}
-lex <- read.csv("../raw_data/Projekt/lex.csv")
+lex <- read.csv("../raw_data//Projekt/lex.csv")
 pop <- read.csv("../raw_data/Projekt/pop.csv")
 gdp_pcap <- read.csv("../raw_data/Projekt/gdp_pcap.csv")
 lex_female <- read.csv("../raw_data/Projekt/life_expectancy_female.csv")
@@ -184,19 +189,6 @@ europe_data$child_mort <- as.numeric(europe_data$child_mort)
 ```
 
 ```{r}
-# Stworzenie podgrup na podstawie PKB per capita
-europe_data <- europe_data %>%
-  mutate(pkb_syt = case_when(
-    gdpPercap < quantile(gdpPercap, 0.25) ~ 'bardzo niskie',
-    gdpPercap >= quantile(gdpPercap, 0.25) & gdpPercap < quantile(gdpPercap, 0.5) ~ 'niskie',
-    gdpPercap >= quantile(gdpPercap, 0.5) & gdpPercap < quantile(gdpPercap, 0.75) ~ 'średnie',
-    gdpPercap >= quantile(gdpPercap, 0.75) ~ 'wysokie'
-  ))
-
-
-```
-
-```{r}
 #TEST - pokazuje kwartyle
 europe_data <- europe_data %>%
   mutate(pkb_syt = case_when(
@@ -230,6 +222,10 @@ europe_data <- europe_data %>%
 
 ## Wizualizacja
 
+### Wykres 1
+
+Ten wykres przedstawia zależność między PKB per capita a oczekiwaną długością życia dla różnych krajów w roku 2000. Każdy punkt na wykresie reprezentuje jeden kraj, gdzie osie X i Y odpowiadają odpowiednio PKB per capita i oczekiwanej długości życia. Rozmiar punktu odpowiada wielkości populacji danego kraju, a kolor punktu reprezentuje konkretny kraj.
+
 ```{r}
 # Tworzenie kopii danych i filtrowanie
 filtered_data <- europe_data %>%
@@ -257,9 +253,114 @@ ggplot(filtered_data, aes(x = gdpPercap, y = lex, size = pop, label = country, c
   ) +
   scale_color_manual(values = point_colors) +  # Ustawienie kolorów punktów
   theme(legend.position = "none")
+  
+
 ```
 
-## 
+### Wykres 2
 
-```{}
+Wykres przedstawia średnią ilość przepracowanych godzin w poszczególnych latach od 1995 roku.
+
+```{r}
+my_col_pal <- brewer.pal(9, "Greens")
+
+filtered_data_w2 <- europe_data %>%
+  filter(year > 1995)
+
+filtered_data_w2 %>%
+  group_by(year) %>%
+  summarise(work_h = mean(work_h, na.rm = TRUE)) %>%
+  pivot_longer(cols = work_h) %>%
+  ggplot() +
+  geom_col(aes(x = year, y = value, fill = value)) +
+  labs(title = "Wykres zależności średniej ilości przepracowanych godzin od roku",
+       x = "Rok",
+       y = "Ilość godzin") +
+  scale_fill_gradientn(colours = my_col_pal[3:9]) +
+  geom_text(aes(x = year, y = value, label = round(value)), 
+            position = position_dodge(width = 0.5), vjust = 0) + 
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.grid = element_blank())
+```
+
+### Wykres 3
+
+```{r}
+kraje_sf <- read_sf("CNTR_RG_01M_2016_4326.shp") %>%
+  select(geometry, NAME_ENGL)
+```
+
+```{r}
+plot(european_countries_sf)
+```
+
+Ten wykres przedstawia mapę Europy oraz terytoriów zależnych, na której kolory obszarów reprezentują kategorie PKB per capita. Kategorie te zostały utowrzone na podstawie kwartyli.
+
+```{r}
+
+european_countries_sf <- kraje_sf %>%
+  filter(NAME_ENGL %in% all_eu_countries)
+
+joined_data <- left_join(european_countries_sf, europe_data, by = c("NAME_ENGL" = "country"))
+
+# Usuwanie brakujących wartości lub wartości NaN
+joined_data <- na.omit(joined_data)
+
+# Define the categories and their labels
+pkb_categories <- c("Bardzo Niskie", "Niskie", "Średnie", "Wysokie")
+
+# Define labels for the categories based on quantiles
+joined_data$pkb_syt <- cut(joined_data$gdpPercap,
+                            breaks = quantile(joined_data$gdpPercap, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE),
+                            labels = pkb_categories,
+                            include.lowest = TRUE)
+
+# Define the colors manually as a named vector
+pkb_colors <- setNames(my_col_pal[1:length(pkb_categories)], pkb_categories)
+
+# Plot using ggplot2
+ggplot() +
+  geom_sf(data = joined_data, aes(fill = pkb_syt)) +
+  scale_fill_manual(values = pkb_colors) +
+  labs(fill = "GDP per Capita", title = "GDP per Capita") +
+  theme_minimal() +
+  theme(legend.position = "left")
+
+```
+
+## Tablica
+
+Ta tablica reaktywna przedstawia różne wskaźniki związane z krajami Europy w roku 2000.
+
+```{r}
+my_col_pal <- brewer.pal(9, "Greens")
+
+filtered_data_tab <- europe_data %>%
+  filter(year == 2000) %>%
+  distinct(country, .keep_all = TRUE) %>%
+  mutate(child_mort = (child_mort * 1000) / pop * 100)
+
+reactable(
+  data = filtered_data_tab %>% select(country, child_mort, pop, gdpPercap, lex_female, lex_male, lex_syt), 
+  defaultColDef = colDef(format = colFormat(digits = 0, locales = "en-GB"), width = 110),
+  columns = list(
+    country = colDef(name = "Kraj", width = 150),
+    
+    child_mort = colDef("Śmiertelność dzieci (<5 lat) (%)", 
+                        format = colFormat(digits = 2)),
+    
+    pop = colDef(name= "Populacja", style = color_scales(data = filtered_data_tab, colors = my_col_pal)),
+
+    gdpPercap = colDef(name = "Produkt Krajowy Brutto", style = color_scales(data = filtered_data_tab, colors = my_col_pal)),
+    
+    lex_female = colDef(name = "Oczekiwana długość życia kobiet", style = color_scales(data = filtered_data_tab, colors = my_col_pal)),
+    
+    lex_male = colDef(name = "Oczekiwana długość życia mężczyzn", style = color_scales(data = filtered_data_tab, colors = my_col_pal)),
+    
+    lex_syt = colDef(name = "Średnia długość życia")
+  )
+)
+
 ```
